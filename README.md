@@ -12,13 +12,13 @@ Módulo de Autenticação e Controle de Acesso baseado em papéis (RBAC: Aluno, 
 
 Gestão de usuários, credenciais seguras e endereços.
 
-# 🏫 Escola Particular Ello Mineiro — MVP
+# Escola Particular Ello Mineiro — MVP
 
 Aplicação Full Stack para o sistema de gestão da **Escola Particular Ello Mineiro**. Este MVP (Produto Mínimo Viável) tem como foco principal a implementação segura do fluxo de **Autenticação, Cadastro e Controle de Acesso** para os utilizadores da plataforma.
 
 ---
 
-## 🎯 Escopo do MVP
+## Escopo do MVP
 
 O projeto contempla a estrutura inicial da aplicação cobrindo a interface, o serviço de backend e o banco de dados relacional.
 
