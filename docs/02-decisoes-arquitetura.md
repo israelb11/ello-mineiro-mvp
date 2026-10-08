@@ -157,7 +157,8 @@ Sugestão: revisar em *code review* que nenhum PR contenha SQL fora de `reposito
 
 ## 8. Perguntas em aberto
 
-1. Cadastro público cria só `Aluno` (opção A) ou escolha livre (B)? — ver [01-requisitos.md](01-requisitos.md)
+1. ~~Perfil no cadastro~~ → **decidido:** o cadastro não pede perfil; todo usuário nasce com o perfil padrão `Usuario`. Demais perfis serão liberados no futuro pelo setor administrativo — ver [01-requisitos.md](01-requisitos.md) e [03-regras-futuras.md](03-regras-futuras.md).
+1a. ~~Padrão do `user_login`~~ → **decidido:** nome de usuário escolhido pelo próprio usuário (3–30 caracteres, `a-z 0-9 . _`, único). A matrícula e o registro funcional são identificadores separados, previstos para fases futuras.
 2. ~~ORM ou SQL puro~~ → **decidido: SQL puro** (seção 7).
 3. JWT em cookie HttpOnly (recomendado agora) ou `sessionStorage`?
 4. Manter MySQL ou migrar para PostgreSQL caso o host gratuito falhe?
