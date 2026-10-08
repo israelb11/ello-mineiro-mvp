@@ -57,7 +57,7 @@ Plano B: migrar para **Neon (PostgreSQL)**; a mudança no script é pequena.
 |---|---|
 | Linguagem/framework | **Python + FastAPI** (Swagger automático, validação com Pydantic) |
 | Arquivos estáticos | `StaticFiles` do FastAPI/Starlette + rota `/` devolvendo `index.html` (`FileResponse`) |
-| Acesso ao banco | SQLAlchemy ou PyMySQL puro (mais didático para BD) |
+| Acesso ao banco | **SQL puro** com driver MySQL (PyMySQL), em camada de repositório — ver [seção 7](#7-decisão-sql-puro-em-vez-de-orm) |
 | Hash de senha | `argon2-cffi` (Argon2id) ou `bcrypt` |
 | Token | PyJWT, HS256, expiração curta |
 | Hospedagem | **Render** (Web Service gratuito) |
@@ -104,7 +104,9 @@ ello-mineiro-mvp/
 ├── database/            # seed.sql, migrações
 ├── app/                 # código FastAPI
 │   ├── main.py          # monta StaticFiles e rotas
-│   ├── routers/         # auth, me
+│   ├── db.py            # conexão/pool com o MySQL (variáveis de ambiente)
+│   ├── repositories/    # TODO o SQL fica aqui (usuarios.py, enderecos.py, permissoes.py)
+│   ├── routers/         # auth, me (chamam os repositórios, nunca escrevem SQL)
 │   └── ...
 ├── frontend/            # servido pelo backend
 │   ├── index.html       # login (rota "/")
@@ -115,14 +117,52 @@ ello-mineiro-mvp/
 └── .env.example
 ```
 
-## 7. Perguntas em aberto
+## 7. Decisão: SQL puro em vez de ORM
+
+**Status: decidido.** O projeto usa SQL puro (PyMySQL), sem ORM.
+
+**Motivo:** o trabalho é em grupo e a disciplina é de banco de dados. Ver os `SELECT`, `INSERT` e `UPDATE` no código reduz a curva de aprendizagem da equipe e deixa explícito o que acontece no banco.
+
+### Regras do time
+1. **Todo SQL fica em `app/repositories/`.** Rotas e regras de negócio chamam funções como `buscar_por_email()` ou `criar_usuario()`.
+2. **Sempre queries parametrizadas** (`%s` + tupla de parâmetros). **Proibido** montar SQL com f-string, `+` ou `.format()` (risco de SQL Injection).
+3. Nunca selecionar `senha_hash` fora da função de login; demais consultas listam as colunas explicitamente (sem `SELECT *`).
+4. Operações com mais de um comando (ex.: usuário + endereço) rodam em **transação** (`commit` / `rollback`).
+5. A fonte da verdade do esquema é o `database/seed.sql`; mudanças são feitas nele e comunicadas ao grupo.
+6. Fechar conexões/cursores (usar `with` ou pool).
+
+### Exemplo do padrão
+```python
+# app/repositories/usuarios.py
+def buscar_por_identificador(conn, identificador):
+    sql = """
+        SELECT id, user_login, email, senha_hash, permissao_nome, ativo
+        FROM Usuarios
+        WHERE user_login = %s OR email = %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (identificador, identificador))
+        return cur.fetchone()
+```
+
+### Consequências
+| Positivo | A gerenciar |
+|---|---|
+| Código didático e alinhado à matéria | Mais código repetitivo (mapear linha → dicionário) |
+| Poucas dependências, comportamento previsível | Segurança depende da disciplina do time (regra 2) |
+| Reaproveita direto o `seed.sql` | Sem migrações automáticas: versionar scripts em `database/` |
+| Camada de repositório isolada | Migrar para ORM no futuro exige reescrever só essa camada |
+
+Sugestão: revisar em *code review* que nenhum PR contenha SQL fora de `repositories/` ou concatenação de strings em queries.
+
+## 8. Perguntas em aberto
 
 1. Cadastro público cria só `Aluno` (opção A) ou escolha livre (B)? — ver [01-requisitos.md](01-requisitos.md)
-2. Usar ORM (SQLAlchemy) ou SQL puro (mais alinhado à matéria de BD)?
+2. ~~ORM ou SQL puro~~ → **decidido: SQL puro** (seção 7).
 3. JWT em cookie HttpOnly (recomendado agora) ou `sessionStorage`?
 4. Manter MySQL ou migrar para PostgreSQL caso o host gratuito falhe?
 
-## 8. Roteiro sugerido
+## 9. Roteiro sugerido
 
 1. Fechar as decisões acima.
 2. Ajustar `seed.sql` e criar o banco no TiDB Cloud.
