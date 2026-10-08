@@ -77,7 +77,8 @@ Regras:
 
 - Confirmação de e-mail e recuperação de senha por link com expiração.
 - Autenticação em dois fatores para perfis administrativos.
-- Revogação de tokens (lista de bloqueio ou *refresh token* rotativo).
+- Revogação de tokens (lista de bloqueio ou *refresh token* rotativo). No MVP o logout apenas apaga o cookie `HttpOnly`; o JWT segue válido até expirar (ver [02-decisoes-arquitetura.md](02-decisoes-arquitetura.md#5-estratégia-de-autenticação)).
+- Token CSRF dedicado (padrão *double submit*), caso surjam rotas sensíveis além de `SameSite=Lax` + checagem de `Origin`.
 - Bloqueio temporário de conta após tentativas de login falhas.
 - Trilha de auditoria para alterações de perfil.
 

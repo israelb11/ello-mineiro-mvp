@@ -59,7 +59,7 @@ Plano B: migrar para **Neon (PostgreSQL)**; a mudança no script é pequena.
 | Arquivos estáticos | `StaticFiles` do FastAPI/Starlette + rota `/` devolvendo `index.html` (`FileResponse`) |
 | Acesso ao banco | **SQL puro** com driver MySQL (PyMySQL), em camada de repositório — ver [seção 7](#7-decisão-sql-puro-em-vez-de-orm) |
 | Hash de senha | `argon2-cffi` (Argon2id) ou `bcrypt` |
-| Token | PyJWT, HS256, expiração curta |
+| Token | PyJWT, HS256, expiração curta, entregue em **cookie HttpOnly** — ver [seção 5](#5-estratégia-de-autenticação) |
 | Hospedagem | **Render** (Web Service gratuito) |
 
 Alternativas de hospedagem única: Koyeb, Fly.io (podem exigir cartão). O Render é a mais simples para começar.
@@ -70,7 +70,7 @@ Alternativas de hospedagem única: Koyeb, Fly.io (podem exigir cartão). O Rende
 |---|---|---|
 | `GET /` | Página | `index.html` (login) |
 | `GET /cadastro` | Página | `cadastro.html` |
-| `GET /home` | Página | `home.html` (o acesso real é protegido pela API: sem token válido, o JS redireciona para `/`) |
+| `GET /home` | Página | `home.html` (o acesso real é protegido pela API: se `/api/me` responder `401`, o JS redireciona para `/`) |
 | `GET /static/*` | Assets | CSS, JS, imagens |
 | `/api/*` | API JSON | ver [01-requisitos.md](01-requisitos.md) |
 | `GET /health` | API | Verificação de saúde |
@@ -89,12 +89,58 @@ Alternativas de hospedagem única: Koyeb, Fly.io (podem exigir cartão). O Rende
 
 ## 5. Estratégia de autenticação
 
-Com mesma origem, a opção mais segura fica simples:
+**Status: decidido.** O JWT é entregue e transportado em **cookie `HttpOnly`**. A alternativa `sessionStorage` + `Authorization: Bearer` foi descartada.
 
-- **Recomendado:** JWT em cookie `HttpOnly; Secure; SameSite=Lax`. O JavaScript não consegue lê-lo, o que reduz o impacto de XSS. Requer proteção contra CSRF nas rotas que alteram dados (`SameSite` já mitiga bastante no MVP).
-- **Alternativa mais simples:** JWT retornado no corpo e guardado em `sessionStorage`, enviado no header `Authorization: Bearer`. Mais fácil de entender, porém exposto a XSS.
-- O backend valida o token em toda rota protegida (dependência do FastAPI).
+**Motivo:** com front e API na mesma origem, o cookie `HttpOnly` é a opção mais segura e também a de front mais simples. O JavaScript não consegue ler o token, o que reduz o impacto de um eventual XSS (o token não pode ser roubado e usado fora do navegador).
+
+### Atributos do cookie
+| Atributo | Valor | Por quê |
+|---|---|---|
+| Nome | `access_token` | Identificação única |
+| `HttpOnly` | sim | JS não lê o cookie (proteção contra roubo por XSS) |
+| `Secure` | sim | Enviado só por HTTPS. Navegadores aceitam em `http://localhost`; configurável por variável de ambiente (`COOKIE_SECURE`) para desenvolvimento |
+| `SameSite` | `Lax` | Não é enviado em `POST` vindo de outros sites (mitiga CSRF) |
+| `Path` | `/` | Válido para páginas e `/api/*` |
+| `Max-Age` | igual ao `exp` do JWT (ex.: 3600) | Cookie e token expiram juntos |
+| `Domain` | não definido | Cookie restrito ao host exato |
+
+### Fluxo
+```mermaid
+sequenceDiagram
+    participant N as Navegador
+    participant A as FastAPI
+    participant D as MySQL
+    N->>A: POST /api/auth/login (JSON)
+    A->>D: SELECT por user_login ou email
+    A->>A: verifica hash + ativo, gera JWT
+    A-->>N: 200 + Set-Cookie access_token (HttpOnly)
+    N->>A: GET /api/me (cookie enviado automaticamente)
+    A->>A: valida JWT (assinatura, exp, HS256)
+    A->>D: SELECT dados do usuário (sem senha_hash)
+    A-->>N: 200 JSON do usuário
+    N->>A: POST /api/auth/logout
+    A-->>N: 204 + Set-Cookie access_token Max-Age=0
+```
+
+- O backend lê o token **do cookie** em uma dependência do FastAPI usada por toda rota protegida; sem cookie ou token inválido/expirado → `401`.
+- O corpo do login **não** contém o token.
+- No front, `fetch('/api/...')` envia o cookie sozinho (padrão `credentials: 'same-origin'`); não há código para guardar ou anexar token.
 - O hash da senha é feito apenas no backend.
+
+### Proteção contra CSRF (RNF18)
+Como o navegador envia o cookie automaticamente, as rotas que alteram estado precisam de proteção:
+1. `SameSite=Lax` (principal barreira no MVP).
+2. Alterações de estado apenas por `POST` com `Content-Type: application/json` (formulários HTML de outros sites não conseguem enviar JSON sem *preflight*, e o CORS não está habilitado).
+3. Checar o header `Origin` nos `POST`: se presente e diferente do host da aplicação → `403`.
+4. Nenhuma rota `GET` altera dados.
+
+### Limitações aceitas no MVP
+| Limitação | Tratamento |
+|---|---|
+| O logout apaga o cookie, mas um token copiado antes continua válido até expirar | Expiração curta (RNF08). Revogação fica para o futuro ([03-regras-futuras.md](03-regras-futuras.md) §7) |
+| XSS ainda pode fazer requisições em nome do usuário enquanto a página está aberta | Evitar `innerHTML` com dados do usuário (usar `textContent`) e definir `Content-Security-Policy` |
+| Cliente mobile ou outro domínio no futuro | Poderá ganhar rota com `Authorization: Bearer`, mantendo o cookie para o navegador |
+| Testar no Swagger (`/docs`) | Funciona: o Swagger roda na mesma origem e o navegador envia o cookie após o login |
 
 ## 6. Estrutura de pastas sugerida
 
@@ -160,13 +206,13 @@ Sugestão: revisar em *code review* que nenhum PR contenha SQL fora de `reposito
 1. ~~Perfil no cadastro~~ → **decidido:** o cadastro não pede perfil; todo usuário nasce com o perfil padrão `Usuario`. Demais perfis serão liberados no futuro pelo setor administrativo — ver [01-requisitos.md](01-requisitos.md) e [03-regras-futuras.md](03-regras-futuras.md).
 1a. ~~Padrão do `user_login`~~ → **decidido:** nome de usuário escolhido pelo próprio usuário (3–30 caracteres, `a-z 0-9 . _`, único). A matrícula e o registro funcional são identificadores separados, previstos para fases futuras.
 2. ~~ORM ou SQL puro~~ → **decidido: SQL puro** (seção 7).
-3. JWT em cookie HttpOnly (recomendado agora) ou `sessionStorage`?
+3. ~~JWT em cookie HttpOnly ou `sessionStorage`~~ → **decidido: cookie `HttpOnly; Secure; SameSite=Lax`** (seção 5). Login responde com `Set-Cookie` (sem token no corpo) e existe `POST /api/auth/logout`.
 4. Manter MySQL ou migrar para PostgreSQL caso o host gratuito falhe?
 
 ## 9. Roteiro sugerido
 
 1. Fechar as decisões acima.
-2. Ajustar `seed.sql` e criar o banco no TiDB Cloud.
-3. Backend: `/health` → servir `index.html` em `/` → `register` → `login` → `me`.
+2. ~~Ajustar `seed.sql`~~ (feito, agora em `database/seed.sql`) e criar o banco no TiDB Cloud.
+3. Backend: `/health` → servir `index.html` em `/` → `register` → `login` → `me` → `logout`.
 4. Front: login, cadastro, home (chamando `/api/...` com URLs relativas).
 5. Deploy único no Render e testes de ponta a ponta.
