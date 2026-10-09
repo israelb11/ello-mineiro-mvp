@@ -45,23 +45,59 @@ Tabelas do banco atual (`database/seed.sql`): `Permissoes`, `Usuarios`, `Enderec
 - `02-decisoes-arquitetura.md`: seção 5 (atributos do cookie, fluxo, CSRF, limitações) e item 3 das "Perguntas em aberto".
 - `03-regras-futuras.md`: seção 7 (revogação e token CSRF dedicado como evoluções).
 
-## 4. Outras pendências
+## 4. Pontos em aberto (retomar daqui)
 
-1. ~~Ajustar o `seed.sql`~~ → **feito** e movido para `database/seed.sql`: perfil `Usuario` + `DEFAULT 'Usuario'`; `senha_hash`; comentário de `user_login`; `CHECK` em `Endereco.situacao`; `utf8mb4`. **Em aberto (opcionais):** `atualizado_em`, `ultimo_login`, telefone só com dígitos.
-2. ~~Atualizar o `README.md`~~ → **feito:** introdução única, sem escolha de perfil, stack alinhada (FastAPI, deploy único, SQL puro, cookie HttpOnly).
-3. **Manter MySQL ou migrar para PostgreSQL** se o host gratuito falhar (item 4 do doc 02).
-4. **Próximo passo:** iniciar o backend, na ordem `/health` → servir `index.html` → `register` → `login` → `me` → `logout`.
+Antes de iniciar o código do backend, há dois pontos em aberto para avaliar ou confirmar:
 
-## 5. Estrutura de pastas criada (arquivos vazios)
+### 4.1. Colunas opcionais em `database/seed.sql`
+- **`atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`** na tabela `Usuarios`: rastreia quando o cadastro foi alterado.
+- **`ultimo_login DATETIME NULL`** na tabela `Usuarios`: atualizado no login com sucesso para fins de auditoria/suporte.
+- **Padronização de telefone**: manter `VARCHAR(15)` ou restringir a `VARCHAR(11)` (apenas dígitos numéricos `DDD + número`).
+> *Observação:* O `seed.sql` atual já é totalmente funcional e suficiente para o MVP. Se o grupo preferir simplicidade, pode-se manter como está.
+
+### 4.2. Estratégia de hospedagem do Banco (MySQL vs PostgreSQL)
+- **Principal:** MySQL no **TiDB Cloud Serverless** (compatível com MySQL, mantém 100% da sintaxe do `seed.sql`).
+- **Plano B:** **Neon (PostgreSQL)** se houver indisponibilidade ou dificuldade no TiDB Cloud. *Impacto se mudar:* adaptar `AUTO_INCREMENT` para `GENERATED ALWAYS AS IDENTITY` e trocar driver `PyMySQL` por `psycopg` ou `asyncpg`.
+
+---
+
+## 5. Próximo passo após fechar os pontos acima
+
+Iniciar a implementação do backend em Python + FastAPI, na seguinte ordem incremental:
+1. Configuração de ambiente e dependências (`requirements.txt`, `.env.example`).
+2. Conexão com o banco (`app/db.py`) e rota `GET /health`.
+3. Montagem dos arquivos estáticos (`StaticFiles`) servindo `frontend/index.html` em `GET /`.
+4. Repositórios SQL (`app/repositories/usuarios.py`, `enderecos.py`).
+5. Rotas de autenticação (`POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`).
+6. Rota protegida `GET /api/me` lendo token do cookie `HttpOnly`.
+7. Telas do front-end (`index.html`, `cadastro.html`, `home.html`) consumindo as rotas.
+
+## 6. Estrutura de pastas do projeto
 
 ```
-app/ (main.py, db.py, repositories/, routers/)
-database/ (seed.sql)
-frontend/ (index.html, cadastro.html, home.html, static/css, static/js)
-docs/
-requirements.txt  .env.example  .gitignore  README.md
+ello-mineiro-mvp/
+├── docs/                # 00-contexto-handoff, 01-requisitos, 02-decisoes, 03-regras
+├── database/            # seed.sql (esquema do MySQL)
+├── app/                 # Backend FastAPI
+│   ├── main.py          # App FastAPI, montagem de estáticos e roteadores
+│   ├── db.py            # Conexão SQL puro
+│   ├── repositories/    # Todo o SQL fica aqui (SQL parametrizado com %s)
+│   └── routers/         # Endpoints da API (/api/auth, /api/me)
+├── frontend/            # Servido pelo próprio FastAPI
+│   ├── index.html       # Login (rota "/")
+│   ├── cadastro.html    # Cadastro (rota "/cadastro")
+│   ├── home.html        # Home / Dashboard (rota "/home")
+│   └── static/          # CSS e JS
+├── requirements.txt
+├── .env.example
+├── .gitignore
+└── README.md
 ```
 
-## 6. Prompt sugerido para iniciar o novo chat
+## 7. Prompts sugeridos para iniciar o novo chat
 
-> Leia `docs/00-contexto-handoff.md`, `docs/01-requisitos.md`, `docs/02-decisoes-arquitetura.md`, `docs/03-regras-futuras.md`, `database/seed.sql` e `README.md`. A documentação do MVP Ello Mineiro (cadastro e login) está fechada, incluindo a decisão do JWT em cookie HttpOnly. Vamos iniciar o backend FastAPI na ordem da seção 4, item 4, seguindo as regras de SQL puro do doc 02.
+### Opção A: Se quiser resolver os pontos pendentes antes de codificar
+> "Leia `docs/00-contexto-handoff.md`, `docs/01-requisitos.md`, `docs/02-decisoes-arquitetura.md`, `docs/03-regras-futuras.md`, `database/seed.sql` e `README.md`. Vamos repassar e decidir os pontos em aberto da seção 4 do arquivo de handoff (colunas opcionais do seed e confirmação do host de banco de dados) antes de iniciar a escrita de código."
+
+### Opção B: Se quiser ir direto para a implementação do backend
+> "Leia `docs/00-contexto-handoff.md`, `docs/01-requisitos.md`, `docs/02-decisoes-arquitetura.md`, `docs/03-regras-futuras.md`, `database/seed.sql` e `README.md`. A documentação do MVP Ello Mineiro está fechada (JWT em cookie HttpOnly, SQL puro). Vamos iniciar o desenvolvimento do backend FastAPI seguindo a ordem da seção 5 do handoff."
